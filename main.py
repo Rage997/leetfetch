@@ -15,7 +15,15 @@ SUPPORTED_BROWSERS = {
     "opera": browser_cookie3.opera
 }
 
-EXT_MAP = {"python": "py", "python3": "py", "cpp": "cpp"}
+EXT_MAP = {
+    "python": "py", "python3": "py", "cpp": "cpp", "java": "java", "c": "c",
+    "csharp": "cs", "javascript": "js", "typescript": "ts", "kotlin": "kt",
+    "swift": "swift", "golang": "go", "ruby": "rb", "scala": "scala",
+    "rust": "rs", "mysql": "sql", "bash": "sh", "racket": "rkt", "erlang": "erl",
+    "elixir": "ex", "dart": "dart", "php": "php", "perl": "pl", "haskell": "hs"
+}
+
+VALID_LANGUAGES = list(EXT_MAP.keys())
 
 def get_session_cookie(browser: str) -> str:
     if browser not in SUPPORTED_BROWSERS:
@@ -97,23 +105,26 @@ def get_problem_data(slug, session_token):
     }"""
     return graphql_request(q, {"slug": slug}, session_token)["data"]["question"]
 
-def save_problem(slug: str, problem_data: dict, submissions: List[dict], base_dir: str, session_token: str):
+def save_problem(slug: str, problem_data: dict, submissions: List[dict], base_dir: str, session_token: str, languages: List[str]):
     title = problem_data["title"]
     problem_dir = os.path.join(base_dir, slug)
     os.makedirs(os.path.join(problem_dir, "submissions"), exist_ok=True)
 
     with open(os.path.join(problem_dir, "README.md"), "w", encoding="utf-8") as f:
-        f.write(f"# {title}\n\n{html_to_md(problem_data.get('content',''))}")
+        f.write(f"# {title}\n\n{html_to_md(problem_data.get('content',''))}\n")
+        f.write("\n---\n\nMade with [leetfetch](https://github.com/Rage997/leetfetch).\n")
 
     for snippet in problem_data.get("codeSnippets", []):
-        if snippet["lang"] == "Python3":
-            p = os.path.join(problem_dir, "solutiontemplate.py")
+        if snippet["lang"].lower() in languages:
+            p = os.path.join(problem_dir, f"solutiontemplate.{EXT_MAP.get(snippet['lang'].lower(), snippet['lang'].lower())}")
             with open(p, "w", encoding="utf-8") as f:
                 f.write(snippet["code"])
             break
 
     for sub in submissions:
         lang = sub["lang"].lower()
+        if lang not in languages:
+            continue
         ext = EXT_MAP.get(lang, lang)
         lang_dir = os.path.join(problem_dir, "submissions", lang)
         os.makedirs(lang_dir, exist_ok=True)
@@ -126,7 +137,7 @@ def save_problem(slug: str, problem_data: dict, submissions: List[dict], base_di
         with open(path, "w", encoding="utf-8") as f:
             f.write(code)
 
-def write_root_readme(output: str, summary: List[Dict]):
+def write_root_readme(output: str, summary: List[Dict], languages: List[str]):
     summary_path = os.path.join(output, "README.md")
     total = len(summary)
     count = {"Easy": 0, "Medium": 0, "Hard": 0}
@@ -138,7 +149,8 @@ def write_root_readme(output: str, summary: List[Dict]):
 ========
 """)
         f.write(f"#### Total solved: {total} (Easy: {count['Easy']} Medium: {count['Medium']} Hard: {count['Hard']})\n")
-        f.write("My Python solutions of [leetcode](https://leetcode.com/problemset/all/)\n\n")
+        f.write("My solutions of [leetcode](https://leetcode.com/problemset/all/)\n\n")
+        f.write(f"Languages: {', '.join(languages)}\n\n")
         f.write("| No | Title | Source Code | Difficulty |\n")
         f.write("|----|-------|-------------|------------|\n")
         for i, item in enumerate(sorted(summary, key=lambda x: x["title"])):
@@ -146,7 +158,8 @@ def write_root_readme(output: str, summary: List[Dict]):
             title = item["title"]
             diff = item["difficulty"]
             url = f"./{slug}"
-            f.write(f"| {i+1} | {title} | [Python]({url}) | {diff} |\n")
+            f.write(f"| {i+1} | {title} | [Link]({url}) | {diff} |\n")
+        f.write("\n---\n\nMade with [leetfetch](https://github.com/Rage997/leetfetch).\n")
 
 def main():
     p = argparse.ArgumentParser()
@@ -155,7 +168,13 @@ def main():
     p.add_argument("--sync", action="store_true")
     p.add_argument("--only-accepted", action=argparse.BooleanOptionalAction, default=True,
                    help="Only include accepted submissions (default: True)")
+    p.add_argument("--languages", nargs="+", default=["python3"], choices=VALID_LANGUAGES,
+                   help="Languages to include (default: python3). Use lowercase names like 'cpp', 'python3'.")
+    p.add_argument("--all-languages", action="store_true",
+                   help="Include all available LeetCode languages")
     args = p.parse_args()
+
+    languages = VALID_LANGUAGES if args.all_languages else args.languages
 
     token = get_session_cookie(args.browser)
     all_subs = get_all_submissions(token)
@@ -180,13 +199,13 @@ def main():
         try:
             pd = get_problem_data(slug, token)
             subs = by_slug[slug]
-            save_problem(slug, pd, subs, args.output, token)
-            total_submissions_written += len(subs)
+            save_problem(slug, pd, subs, args.output, token, languages)
+            total_submissions_written += len([s for s in subs if s["lang"].lower() in languages])
             summary.append({"slug": slug, "title": pd["title"], "difficulty": pd["difficulty"]})
         except Exception as e:
             print(f"❌ {slug}: {e}")
 
-    write_root_readme(args.output, summary)
+    write_root_readme(args.output, summary, languages)
 
     print(f"\n✅ Finished. {total_problems} problems saved.")
     print(f"📝 Total submissions downloaded: {total_submissions_written}")
