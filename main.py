@@ -15,6 +15,8 @@ SUPPORTED_BROWSERS = {
     "opera": browser_cookie3.opera
 }
 
+EXT_MAP = {"python": "py", "python3": "py", "cpp": "cpp"}
+
 def get_session_cookie(browser: str) -> str:
     if browser not in SUPPORTED_BROWSERS:
         raise ValueError(f"Unsupported browser '{browser}'. Choose from: {', '.join(SUPPORTED_BROWSERS)}")
@@ -98,25 +100,33 @@ def get_problem_data(slug, session_token):
 
 def save_problem(slug: str, problem_data: dict, submissions: List[dict], base_dir: str, session_token: str):
     title = problem_data["title"]
-    dir = os.path.join(base_dir, slug)
-    os.makedirs(os.path.join(dir, "submissions"), exist_ok=True)
+    problem_dir = os.path.join(base_dir, slug)
+    os.makedirs(os.path.join(problem_dir, "submissions"), exist_ok=True)
 
-    with open(os.path.join(dir, "README.md"), "w", encoding="utf-8") as f:
+    with open(os.path.join(problem_dir, "README.md"), "w", encoding="utf-8") as f:
         f.write(f"# {title}\n\n{html_to_md(problem_data.get('content',''))}")
 
     for snippet in problem_data.get("codeSnippets", []):
         if snippet["lang"] == "Python3":
-            p = os.path.join(dir, "solutiontemplate.py")
+            p = os.path.join(problem_dir, "solutiontemplate.py")
             with open(p, "w", encoding="utf-8") as f:
                 f.write(snippet["code"])
             break
-
+            
     for sub in submissions:
-        if sub["lang"].lower().startswith("python"):
-            code = get_submission_code(sub["id"], session_token)
-            fn = f"{sub['timestamp']}_{sub['statusDisplay'].replace(' ','_')}.py"
-            with open(os.path.join(dir, "submissions", fn), "w", encoding="utf-8") as f:
-                f.write(code)
+        lang = sub["lang"].lower()
+        ext = EXT_MAP.get(lang, lang)
+        lang_dir = os.path.join(problem_dir, "submissions", lang)
+        os.makedirs(lang_dir, exist_ok=True)
+
+        code = get_submission_code(int(sub["id"]), session_token)
+        timestamp = sub["timestamp"]
+        status = sub["statusDisplay"].replace(" ", "_")
+        filename = f"{timestamp}_{status}.{ext}"
+        path = os.path.join(lang_dir, filename)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(code)
+
 
 def main():
     p = argparse.ArgumentParser()
