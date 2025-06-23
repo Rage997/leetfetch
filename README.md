@@ -75,6 +75,3 @@ leetcode/
 │   └── ...
 └── README.md  # Summary index
 ```
-
----
-Made with [leetfetch](https://github.com/Rage997/leetfetch).
