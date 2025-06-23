@@ -147,12 +147,21 @@ def main():
         slugs = [s for s in slugs if s not in existing]
     print(f"Processing {len(slugs)} problems…")
 
+    total_submissions_written = 0
+    total_problems = len(slugs)
+
     for slug in slugs:
         try:
             pd = get_problem_data(slug, token)
-            save_problem(slug, pd, by_slug[slug], args.output, token)
+            subs = by_slug[slug]
+            save_problem(slug, pd, subs, args.output, token)
+            total_submissions_written += len(subs)
         except Exception as e:
             print(f"❌ {slug}: {e}")
+
+    print(f"\n✅ Finished. {total_problems} problems saved.")
+    print(f"📝 Total submissions downloaded: {total_submissions_written}")
+
 
 if __name__ == "__main__":
     main()
