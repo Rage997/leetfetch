@@ -44,7 +44,7 @@ def graphql_request(query: str, variables: dict, session_token: str) -> dict:
 def get_all_submissions(session_token: str) -> List[Dict]:
     subs = []
     offset = 0
-    limit = 50
+    limit = 5
 
     while True:
         data = graphql_request(
@@ -133,12 +133,17 @@ def main():
     p.add_argument("--browser", default="chrome", choices=SUPPORTED_BROWSERS)
     p.add_argument("--output", default="leetcode")
     p.add_argument("--sync", action="store_true")
+    p.add_argument("--only-accepted", action=argparse.BooleanOptionalAction, default=True,
+                   help="Only include accepted submissions (default: True)")
     args = p.parse_args()
 
     token = get_session_cookie(args.browser)
     all_subs = get_all_submissions(token)
     by_slug = {}
+
     for s in all_subs:
+        if args.only_accepted and s["statusDisplay"] != "Accepted":
+            continue
         by_slug.setdefault(s["titleSlug"], []).append(s)
 
     slugs = list(by_slug.keys())
