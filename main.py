@@ -44,7 +44,7 @@ def graphql_request(query: str, variables: dict, session_token: str) -> dict:
 def get_all_submissions(session_token: str) -> List[Dict]:
     subs = []
     offset = 0
-    limit = 5
+    limit = 20
 
     while True:
         data = graphql_request(
@@ -82,7 +82,6 @@ def get_submission_code(submission_id: int, session_token: str) -> str:
     )
     return data["data"]["submissionDetails"]["code"]
 
-
 def html_to_md(html: str) -> str:
     h = html2text.HTML2Text()
     h.ignore_links = True
@@ -93,7 +92,7 @@ def get_problem_data(slug, session_token):
     q = """
     query q($slug: String!) {
       question(titleSlug: $slug) {
-        title content codeSnippets { lang code }
+        title content difficulty codeSnippets { lang code }
       }
     }"""
     return graphql_request(q, {"slug": slug}, session_token)["data"]["question"]
@@ -112,7 +111,7 @@ def save_problem(slug: str, problem_data: dict, submissions: List[dict], base_di
             with open(p, "w", encoding="utf-8") as f:
                 f.write(snippet["code"])
             break
-            
+
     for sub in submissions:
         lang = sub["lang"].lower()
         ext = EXT_MAP.get(lang, lang)
@@ -127,6 +126,27 @@ def save_problem(slug: str, problem_data: dict, submissions: List[dict], base_di
         with open(path, "w", encoding="utf-8") as f:
             f.write(code)
 
+def write_root_readme(output: str, summary: List[Dict]):
+    summary_path = os.path.join(output, "README.md")
+    total = len(summary)
+    count = {"Easy": 0, "Medium": 0, "Hard": 0}
+    for item in summary:
+        count[item["difficulty"]] += 1
+
+    with open(summary_path, "w", encoding="utf-8") as f:
+        f.write("""leetcode
+========
+""")
+        f.write(f"#### Total solved: {total} (Easy: {count['Easy']} Medium: {count['Medium']} Hard: {count['Hard']})\n")
+        f.write("My Python solutions of [leetcode](https://leetcode.com/problemset/all/)\n\n")
+        f.write("| No | Title | Source Code | Difficulty |\n")
+        f.write("|----|-------|-------------|------------|\n")
+        for i, item in enumerate(sorted(summary, key=lambda x: x["title"])):
+            slug = item["slug"]
+            title = item["title"]
+            diff = item["difficulty"]
+            url = f"./{slug}"
+            f.write(f"| {i+1} | {title} | [Python]({url}) | {diff} |\n")
 
 def main():
     p = argparse.ArgumentParser()
@@ -154,6 +174,7 @@ def main():
 
     total_submissions_written = 0
     total_problems = len(slugs)
+    summary = []
 
     for slug in slugs:
         try:
@@ -161,12 +182,14 @@ def main():
             subs = by_slug[slug]
             save_problem(slug, pd, subs, args.output, token)
             total_submissions_written += len(subs)
+            summary.append({"slug": slug, "title": pd["title"], "difficulty": pd["difficulty"]})
         except Exception as e:
             print(f"❌ {slug}: {e}")
 
+    write_root_readme(args.output, summary)
+
     print(f"\n✅ Finished. {total_problems} problems saved.")
     print(f"📝 Total submissions downloaded: {total_submissions_written}")
-
 
 if __name__ == "__main__":
     main()
