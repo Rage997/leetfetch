@@ -1,18 +1,28 @@
 import os
 import requests
 import browser_cookie3
+import argparse
 from typing import List, Dict
+from bs4 import BeautifulSoup
 
 GRAPHQL_URL = "https://leetcode.com/graphql"
-USERNAME = "rage"  # Replace with your actual LeetCode username
 
+SUPPORTED_BROWSERS = {
+    "chrome": browser_cookie3.chrome,
+    "firefox": browser_cookie3.firefox,
+    "brave": browser_cookie3.brave,
+    "edge": browser_cookie3.edge,
+    "opera": browser_cookie3.opera
+}
 
-def get_session_cookie() -> str:
-    cookies = browser_cookie3.brave()
+def get_session_cookie(browser: str) -> str:
+    if browser not in SUPPORTED_BROWSERS:
+        raise ValueError(f"Unsupported browser '{browser}'. Choose from: {', '.join(SUPPORTED_BROWSERS)}")
+    cookies = SUPPORTED_BROWSERS[browser]()
     for cookie in cookies:
         if cookie.name == 'LEETCODE_SESSION':
             return cookie.value
-    raise Exception("Session cookie not found. Please log into LeetCode in your browser.")
+    raise Exception(f"LEETCODE_SESSION cookie not found in {browser}. Make sure you're logged into LeetCode.")
 
 def graphql_request(query: str, variables: dict, session_token: str) -> dict:
     headers = {
@@ -29,8 +39,6 @@ def graphql_request(query: str, variables: dict, session_token: str) -> dict:
         print("GraphQL error:", response.text)
         response.raise_for_status()
     return response.json()
-
-
 
 def get_solved_problem_slugs(session_token: str) -> List[str]:
     slugs = set()
@@ -64,8 +72,6 @@ def get_solved_problem_slugs(session_token: str) -> List[str]:
 
     return list(slugs)
 
-
-
 def get_problem_data(slug: str, session_token: str) -> Dict:
     query = """
     query questionData($titleSlug: String!) {
@@ -83,36 +89,57 @@ def get_problem_data(slug: str, session_token: str) -> Dict:
     data = graphql_request(query, variables, session_token)
     return data["data"]["question"]
 
+import html2text
 
-def save_problem(problem_data: Dict):
+def html_to_markdown(html: str) -> str:
+    h = html2text.HTML2Text()
+    h.ignore_links = True
+    h.body_width = 0  # Do not wrap lines
+    return h.handle(html)
+
+
+def save_problem(problem_data: Dict, base_dir: str):
     slug = problem_data["title"].replace(" ", "_")
-    os.makedirs(slug, exist_ok=True)
+    target_dir = os.path.join(base_dir, slug)
+    os.makedirs(target_dir, exist_ok=True)
 
-    # Save problem statement
-    with open(f"{slug}/README.md", "w", encoding="utf-8") as f:
+    markdown = html_to_markdown(problem_data['content'] or "No description available.")
+
+    with open(os.path.join(target_dir, "README.md"), "w", encoding="utf-8") as f:
         f.write(f"# {problem_data['title']}\n\n")
-        f.write(problem_data['content'] or "No description available.")
+        f.write(markdown)
 
-    # Save Python3 code snippet if available
     for snippet in problem_data.get("codeSnippets", []):
         if snippet["lang"] == "Python3":
-            with open(f"{slug}/solution.py", "w", encoding="utf-8") as f:
+            with open(os.path.join(target_dir, "solution.py"), "w", encoding="utf-8") as f:
                 f.write(snippet["code"])
             break
 
-
 def main():
-    session_token = get_session_cookie()
+    parser = argparse.ArgumentParser(description="Download accepted LeetCode submissions.")
+    parser.add_argument("--username", required=True, help="Your LeetCode username")
+    parser.add_argument("--output", default="leetcode", help="Directory to save problems")
+    parser.add_argument("--browser", default="chrome", choices=SUPPORTED_BROWSERS.keys(), help="Browser to load cookies from")
+    parser.add_argument("--sync", action="store_true", help="Only download new problems not yet in the output folder")
+
+    args = parser.parse_args()
+
+    session_token = get_session_cookie(args.browser)
     print("Fetching solved problem slugs...")
     slugs = get_solved_problem_slugs(session_token)
     print(f"Found {len(slugs)} solved problems.")
 
+    if args.sync:
+        existing = set(os.listdir(args.output)) if os.path.exists(args.output) else set()
+        slugs = [slug for slug in slugs if slug.replace("-", "_") not in existing]
+        print(f"{len(slugs)} new problems to download (sync mode).")
+
     for slug in slugs:
         print(f"Processing {slug}...")
         problem_data = get_problem_data(slug, session_token)
-        save_problem(problem_data)
+        save_problem(problem_data, args.output)
+
     print("Done.")
 
-
-# Uncomment the line below to run the script
-main()
+if __name__ == "__main__":
+    main()
